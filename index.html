@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Trudge Brothers — Intro</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
+<style>
+  :root { color-scheme: dark; }
+  html,body{ margin:0; height:100%; background:#050816; }
+  canvas{
+    display:block; margin:0 auto;
+    width:min(100vw, 1080px); height:auto;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    background:#050816;
+    touch-action: manipulation;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="512" height="288"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d", { alpha:false });
+  ctx.imageSmoothingEnabled = false;
+
+  const W = canvas.width, H = canvas.height;
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const easeOut=(t)=>1-Math.pow(1-t,3);
+
+  // Plates (SNES-looking)
+  const bed   = new Image(); bed.src   = "./assets/scene_bed.png";
+  const kneel = new Image(); kneel.src = "./assets/scene_kneel.png";
+  const titleBg = new Image(); titleBg.src = "./assets/title_bg.png"; // CLEAN. No baked text.
+
+  // Font helpers
+  function setFont(px){ ctx.font = `${px}px "Press Start 2P", monospace`; }
+  function drawTextShadow(text, x, y, px, color="rgba(255,255,255,0.95)", shadow="rgba(0,0,0,0.80)"){
+    setFont(px);
+    ctx.fillStyle = shadow; ctx.fillText(text, x+2, y+2);
+    ctx.fillStyle = color;  ctx.fillText(text, x, y);
+  }
+  function rgbSplitText(text, x, y, px, strength=2){
+    setFont(px);
+    ctx.globalAlpha=0.80;
+    ctx.fillStyle="rgba(255,70,70,1)";   ctx.fillText(text, x-1*strength, y);
+    ctx.fillStyle="rgba(70,255,190,1)";  ctx.fillText(text, x+1*strength, y);
+    ctx.fillStyle="rgba(90,160,255,1)";  ctx.fillText(text, x, y-1*strength);
+    ctx.globalAlpha=1;
+  }
+
+  // Timeline (seconds)
+  const T_BED0=0.0, T_BED1=4.8;
+  const T_KNEEL0=4.8, T_KNEEL1=7.2;      // Bill kneels and prays
+  const FLASH0=7.2, FLASH1=12.2;         // 5 seconds shake/flash
+  const AFTER0=12.2, AFTER1=15.6;
+  const FADE0=15.6, FADE1=17.2;
+
+  let mode="intro";
+  let t=0;
+
+  // Title menu
+  const menu = {
+    selected: 0,
+    items: [
+      { label:"START TO SURRENDER", action: ()=>{ mode="next"; } },
+      { label:"REPLAY INTRO", action: ()=>{ reset(); } },
+    ]
+  };
+
+  // Pointer for clicks / hover
+  const pointer = {x:-999,y:-999};
+  canvas.addEventListener("pointermove",(e)=>{
+    const r=canvas.getBoundingClientRect();
+    pointer.x = (e.clientX - r.left) * (W/r.width);
+    pointer.y = (e.clientY - r.top)  * (H/r.height);
+  });
+  canvas.addEventListener("pointerdown",()=>{
+    if (mode==="title"){
+      const hit = hitTestButtons(pointer.x, pointer.y);
+      if (hit>=0){ menu.selected=hit; menu.items[hit].action(); }
+    } else if (mode==="next"){
+      mode="title";
+    }
+  });
+
+  window.addEventListener("keydown",(e)=>{
+    if (mode==="title"){
+      if (e.code==="ArrowUp")   menu.selected = (menu.selected + menu.items.length - 1) % menu.items.length;
+      if (e.code==="ArrowDown") menu.selected = (menu.selected + 1) % menu.items.length;
+      if (e.code==="Enter" || e.code==="Space") menu.items[menu.selected].action();
+      if (["ArrowUp","ArrowDown","Enter","Space"].includes(e.code)) e.preventDefault();
+    } else if (mode==="next"){
+      if (e.code==="Escape") mode="title";
+    }
+  }, {passive:false});
+
+  // Button layout
+  function buttonRects(){
+    const bw=330, bh=34, cx=W/2, y1=176, gap=12;
+    return [
+      { x:cx-bw/2, y:y1,        w:bw, h:bh },
+      { x:cx-bw/2, y:y1+bh+gap, w:bw, h:bh },
+    ];
+  }
+  function hitTestButtons(px,py){
+    const rs=buttonRects();
+    for (let i=0;i<rs.length;i++){
+      const r=rs[i];
+      if (px>=r.x && px<=r.x+r.w && py>=r.y && py<=r.y+r.h) return i;
+    }
+    return -1;
+  }
+  function drawButtons(now){
+    const rs=buttonRects();
+    const hit = hitTestButtons(pointer.x, pointer.y);
+    if (hit>=0) menu.selected = hit;
+
+    for (let i=0;i<menu.items.length;i++){
+      const r=rs[i];
+      const sel = i===menu.selected;
+      const pulse = 0.5 + 0.5*Math.sin(now*0.010 + i);
+      const glowA = sel ? (0.18 + 0.16*pulse) : (0.06 + 0.05*pulse);
+
+      ctx.fillStyle="rgba(0,0,0,0.45)";
+      ctx.fillRect((r.x+2)|0,(r.y+2)|0,r.w|0,r.h|0);
+
+      ctx.fillStyle="rgba(10,14,26,0.82)";
+      ctx.fillRect(r.x|0,r.y|0,r.w|0,r.h|0);
+
+      ctx.fillStyle="rgba(22,30,52,0.55)";
+      ctx.fillRect((r.x+3)|0,(r.y+3)|0,(r.w-6)|0,(r.h-6)|0);
+
+      ctx.strokeStyle = sel ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.28)";
+      ctx.lineWidth=1;
+      ctx.strokeRect(r.x+0.5,r.y+0.5,r.w-1,r.h-1);
+
+      ctx.fillStyle=`rgba(140,180,255,${glowA})`;
+      ctx.fillRect((r.x+1)|0,(r.y+1)|0,(r.w-2)|0,(r.h-2)|0);
+
+      setFont(10);
+      const label=menu.items[i].label;
+      const lx=r.x + (r.w - ctx.measureText(label).width)/2;
+      const ly=r.y + 22;
+      drawTextShadow(label, lx, ly, 10, sel ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.85)");
+      if (sel) drawTextShadow("▶", r.x+14, ly, 10, "rgba(255,255,255,0.98)");
+    }
+  }
+
+  function drawTitle(now){
+    if (titleBg.complete) ctx.drawImage(titleBg,0,0);
+    else { ctx.fillStyle="#050515"; ctx.fillRect(0,0,W,H); }
+
+    // logo slam
+    titleIn = clamp(titleIn + 0.018, 0, 1);
+    const e=easeOut(titleIn);
+    const yDrop=lerp(-40, 96, e);
+    const overshoot=Math.sin(titleIn*Math.PI)*8;
+
+    const title="TRUDGE BROTHERS";
+    setFont(18);
+    const tx=(W-ctx.measureText(title).width)/2;
+
+    ctx.globalAlpha=0.85;
+    ctx.fillStyle="rgba(0,0,0,0.90)";
+    ctx.fillText(title, tx+5, yDrop+overshoot+10);
+    ctx.globalAlpha=1;
+    rgbSplitText(title, tx, yDrop+overshoot+8, 18, 2);
+    ctx.fillStyle="rgba(255,255,255,0.97)";
+    ctx.fillText(title, tx, yDrop+overshoot+8);
+
+    const sub="PRESS START TO SURRENDER";
+    setFont(10);
+    drawTextShadow(sub, (W-ctx.measureText(sub).width)/2, 140, 10, "rgba(255,255,255,0.88)");
+
+    drawButtons(now);
+  }
+
+  // Intro FX
+  function flashShake(now){
+    if (t>=FLASH0 && t<=FLASH1){
+      const u=(t-FLASH0)/(FLASH1-FLASH0);
+      const rampIn=clamp(u/0.15,0,1);
+      const rampOut=clamp((1-u)/0.18,0,1);
+      const inten=Math.min(rampIn,rampOut);
+
+      const shake = 10 + 10*inten;
+      const dx = (Math.random()*2-1)*shake;
+      const dy = (Math.random()*2-1)*shake;
+
+      // strobe + whiteouts
+      const strobe = 0.20 + 0.25*Math.sin(now*0.018) + 0.18*Math.sin(now*0.065);
+      const bigHit = (Math.sin(now*0.010) > 0.92) ? 0.65 : 0.0;
+      const flash = clamp((strobe+bigHit)*inten, 0, 1);
+
+      ctx.globalAlpha=1;
+      // slight blue wash
+      ctx.fillStyle=`rgba(140,180,255,${0.10*inten})`;
+      ctx.fillRect(0,0,W,H);
+
+      ctx.globalAlpha=flash;
+      ctx.fillStyle="#fff";
+      ctx.fillRect(0,0,W,H);
+      ctx.globalAlpha=1;
+
+      return {dx,dy,flash,inten};
+    }
+    return {dx:0,dy:0,flash:0,inten:0};
+  }
+
+  // Dialogue boxes (simple)
+  function drawDialogue(text){
+    const boxX=14, boxY=H-90, boxW=W-28, boxH=76;
+    ctx.fillStyle="rgba(0,0,0,0.36)"; ctx.fillRect(boxX+2, boxY+2, boxW, boxH);
+    ctx.fillStyle="rgba(6,8,14,0.88)"; ctx.fillRect(boxX, boxY, boxW, boxH);
+    ctx.fillStyle="rgba(20,26,44,0.70)"; ctx.fillRect(boxX+4, boxY+4, boxW-8, boxH-8);
+    ctx.strokeStyle="rgba(255,255,255,0.35)"; ctx.lineWidth=1;
+    ctx.strokeRect(boxX+0.5, boxY+0.5, boxW-1, boxH-1);
+
+    // wrap
+    setFont(10);
+    const words=text.split(/\s+/);
+    const lines=[];
+    let line="";
+    const maxW=boxW-32;
+    for(const w of words){
+      const test=line? (line+" "+w) : w;
+      if (ctx.measureText(test).width<=maxW) line=test;
+      else { lines.push(line); line=w; }
+    }
+    if (line) lines.push(line);
+    for (let i=0;i<Math.min(3,lines.length);i++){
+      drawTextShadow(lines[i], boxX+16, boxY+26+i*18, 10, "rgba(255,255,255,0.92)");
+    }
+  }
+
+  let titleIn=0;
+
+  function reset(){
+    mode="intro";
+    t=0;
+    titleIn=0;
+  }
+
+  // main
+  let last=performance.now();
+  function loop(now){
+    const dt=Math.min(0.05,(now-last)/1000);
+    last=now;
+
+    if (mode==="intro"){
+      t += dt;
+
+      // base plate selection
+      let plate = bed;
+      let dialog = "";
+      if (t < 3.0){
+        plate = bed;
+        dialog = "TOWNES HOSPITAL… AGAIN.";
+      } else if (t >= T_KNEEL0 && t < AFTER0){
+        plate = kneel;
+        dialog = (t < FLASH0) ? "IF THERE IS A GOD— SHOW HIMSELF TO ME!" : "";
+      } else if (t >= AFTER0 && t < AFTER1){
+        plate = kneel;
+        dialog = "WHAT IF I CAN GET THESE DRUNKS HELPING EACH OTHER?";
+      }
+
+      const fx = flashShake(now);
+
+      ctx.save();
+      ctx.translate(fx.dx|0, fx.dy|0);
+      if (plate.complete) ctx.drawImage(plate,0,0);
+      else { ctx.fillStyle="#050816"; ctx.fillRect(0,0,W,H); }
+      ctx.restore();
+
+      if (dialog) drawDialogue(dialog);
+
+      // fade to title
+      if (t >= FADE0){
+        const u = clamp((t-FADE0)/(FADE1-FADE0),0,1);
+        ctx.globalAlpha=u;
+        ctx.fillStyle="#000";
+        ctx.fillRect(0,0,W,H);
+        ctx.globalAlpha=1;
+        if (u >= 1) mode="title";
+      }
+    }
+    else if (mode==="title"){
+      drawTitle(now);
+    }
+    else if (mode==="next"){
+      ctx.fillStyle="#050515"; ctx.fillRect(0,0,W,H);
+      drawTextShadow("SIDE-SCROLLER COMING NEXT.", 46, 130, 10, "rgba(255,255,255,0.90)");
+      drawTextShadow("ESC = BACK TO TITLE", 94, 158, 10, "rgba(255,255,255,0.70)");
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  reset();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
