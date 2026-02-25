@@ -12,10 +12,14 @@
 <style>
   :root { color-scheme: dark; }
   html,body{ margin:0; height:100%; background:#050816; }
+  body{ display:flex; align-items:flex-start; justify-content:center; padding:0; }
+
+  /* IMPORTANT: JS will snap this to an integer scale on desktop for crisp pixels */
   canvas{
-    display:block; margin:0 auto;
-    width:min(100vw, 1080px); height:auto;
-    image-rendering: pixelated; image-rendering: crisp-edges;
+    display:block;
+    margin:0 auto;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
     background:#050816;
     touch-action: manipulation;
   }
@@ -35,38 +39,56 @@
   const lerp=(a,b,t)=>a+(b-a)*t;
   const easeOut=(t)=>1-Math.pow(1-t,3);
 
-  // Plates (SNES-looking)
-  const bed   = new Image(); bed.src   = "./scene_bed.png";
-  const kneel = new Image(); kneel.src = "./scene_kneel.png";
-  const titleBg = new Image(); titleBg.src = "./title_bg.png"; // CLEAN. No baked text.
+  // =========================
+  // Crisp integer scaling (desktop fix)
+  // =========================
+  function snapScale(){
+    const maxW = Math.min(window.innerWidth, 1080);
+    const maxH = window.innerHeight;
+    const sW = Math.floor(maxW / W);
+    const sH = Math.floor(maxH / H);
+    const s = Math.max(1, Math.min(sW, sH));
+    canvas.style.width  = (W * s) + "px";
+    canvas.style.height = (H * s) + "px";
+  }
+  window.addEventListener("resize", snapScale);
+  snapScale();
 
+  // =========================
+  // Plates (PNG)
+  // Put these files next to index.html (case-sensitive on GitHub Pages)
+  // =========================
+  const bed     = new Image(); bed.src     = "./scene_bed.png";
+  const kneel   = new Image(); kneel.src   = "./scene_kneel.png";
+  const titleBg = new Image(); titleBg.src = "./title_bg.png"; // your awesome new title art
+
+  const assets = [bed, kneel, titleBg];
+
+  // =========================
   // Font helpers
+  // =========================
   function setFont(px){ ctx.font = `${px}px "Press Start 2P", monospace`; }
   function drawTextShadow(text, x, y, px, color="rgba(255,255,255,0.95)", shadow="rgba(0,0,0,0.80)"){
     setFont(px);
     ctx.fillStyle = shadow; ctx.fillText(text, x+2, y+2);
     ctx.fillStyle = color;  ctx.fillText(text, x, y);
   }
-  function rgbSplitText(text, x, y, px, strength=2){
-    setFont(px);
-    ctx.globalAlpha=0.80;
-    ctx.fillStyle="rgba(255,70,70,1)";   ctx.fillText(text, x-1*strength, y);
-    ctx.fillStyle="rgba(70,255,190,1)";  ctx.fillText(text, x+1*strength, y);
-    ctx.fillStyle="rgba(90,160,255,1)";  ctx.fillText(text, x, y-1*strength);
-    ctx.globalAlpha=1;
-  }
 
+  // =========================
   // Timeline (seconds)
-  const T_BED0=0.0, T_BED1=4.8;
-  const T_KNEEL0=4.8, T_KNEEL1=7.2;      // Bill kneels and prays
-  const FLASH0=7.2, FLASH1=12.2;         // 5 seconds shake/flash
+  // =========================
+  const T_BED0=0.0,  T_BED1=4.8;
+  const T_KNEEL0=4.8, T_KNEEL1=7.2;
+  const FLASH0=7.2,  FLASH1=12.2;
   const AFTER0=12.2, AFTER1=15.6;
-  const FADE0=15.6, FADE1=17.2;
+  const FADE0=15.6,  FADE1=17.2;
 
-  let mode="intro";
+  let mode="loading";
   let t=0;
 
+  // =========================
   // Title menu
+  // =========================
   const menu = {
     selected: 0,
     items: [
@@ -75,21 +97,27 @@
     ]
   };
 
-  // Pointer for clicks / hover
+  // Pointer state (for hover + touch)
   const pointer = {x:-999,y:-999};
-  canvas.addEventListener("pointermove",(e)=>{
-    const r=canvas.getBoundingClientRect();
-    pointer.x = (e.clientX - r.left) * (W/r.width);
-    pointer.y = (e.clientY - r.top)  * (H/r.height);
-  });
-  canvas.addEventListener("pointerdown",()=>{
+
+  function setPointerFromEvent(e){
+    const r = canvas.getBoundingClientRect();
+    pointer.x = (e.clientX - r.left) * (W / r.width);
+    pointer.y = (e.clientY - r.top)  * (H / r.height);
+  }
+
+  canvas.addEventListener("pointermove",(e)=> setPointerFromEvent(e), {passive:true});
+
+  canvas.addEventListener("pointerdown",(e)=>{
+    setPointerFromEvent(e);
+
     if (mode==="title"){
       const hit = hitTestButtons(pointer.x, pointer.y);
       if (hit>=0){ menu.selected=hit; menu.items[hit].action(); }
     } else if (mode==="next"){
       mode="title";
     }
-  });
+  }, {passive:true});
 
   window.addEventListener("keydown",(e)=>{
     if (mode==="title"){
@@ -102,7 +130,9 @@
     }
   }, {passive:false});
 
-  // Button layout
+  // =========================
+  // Button layout / drawing
+  // =========================
   function buttonRects(){
     const bw=330, bh=34, cx=W/2, y1=176, gap=12;
     return [
@@ -110,6 +140,7 @@
       { x:cx-bw/2, y:y1+bh+gap, w:bw, h:bh },
     ];
   }
+
   function hitTestButtons(px,py){
     const rs=buttonRects();
     for (let i=0;i<rs.length;i++){
@@ -118,6 +149,7 @@
     }
     return -1;
   }
+
   function drawButtons(now){
     const rs=buttonRects();
     const hit = hitTestButtons(pointer.x, pointer.y);
@@ -129,22 +161,28 @@
       const pulse = 0.5 + 0.5*Math.sin(now*0.010 + i);
       const glowA = sel ? (0.18 + 0.16*pulse) : (0.06 + 0.05*pulse);
 
+      // drop shadow
       ctx.fillStyle="rgba(0,0,0,0.45)";
       ctx.fillRect((r.x+2)|0,(r.y+2)|0,r.w|0,r.h|0);
 
+      // body
       ctx.fillStyle="rgba(10,14,26,0.82)";
       ctx.fillRect(r.x|0,r.y|0,r.w|0,r.h|0);
 
+      // inner panel
       ctx.fillStyle="rgba(22,30,52,0.55)";
       ctx.fillRect((r.x+3)|0,(r.y+3)|0,(r.w-6)|0,(r.h-6)|0);
 
-      ctx.strokeStyle = sel ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.28)";
-      ctx.lineWidth=1;
-      ctx.strokeRect(r.x+0.5,r.y+0.5,r.w-1,r.h-1);
-
+      // glow wash
       ctx.fillStyle=`rgba(140,180,255,${glowA})`;
       ctx.fillRect((r.x+1)|0,(r.y+1)|0,(r.w-2)|0,(r.h-2)|0);
 
+      // border
+      ctx.strokeStyle = sel ? "rgba(255,255,255,0.62)" : "rgba(255,255,255,0.32)";
+      ctx.lineWidth=1;
+      ctx.strokeRect(r.x+0.5,r.y+0.5,r.w-1,r.h-1);
+
+      // label
       setFont(10);
       const label=menu.items[i].label;
       const lx=r.x + (r.w - ctx.measureText(label).width)/2;
@@ -154,36 +192,22 @@
     }
   }
 
+  // =========================
+  // Title screen
+  // IMPORTANT: We do NOT draw a text logo now because your new title_bg.png
+  // already has the huge “POW” TRUDGE BROTHERS logo baked in.
+  // =========================
   function drawTitle(now){
     if (titleBg.complete) ctx.drawImage(titleBg,0,0);
     else { ctx.fillStyle="#050515"; ctx.fillRect(0,0,W,H); }
 
-    // logo slam
-    titleIn = clamp(titleIn + 0.018, 0, 1);
-    const e=easeOut(titleIn);
-    const yDrop=lerp(-40, 96, e);
-    const overshoot=Math.sin(titleIn*Math.PI)*8;
-
-    const title="TRUDGE BROTHERS";
-    setFont(18);
-    const tx=(W-ctx.measureText(title).width)/2;
-
-    ctx.globalAlpha=0.85;
-    ctx.fillStyle="rgba(0,0,0,0.90)";
-    ctx.fillText(title, tx+5, yDrop+overshoot+10);
-    ctx.globalAlpha=1;
-    rgbSplitText(title, tx, yDrop+overshoot+8, 18, 2);
-    ctx.fillStyle="rgba(255,255,255,0.97)";
-    ctx.fillText(title, tx, yDrop+overshoot+8);
-
-    const sub="PRESS START TO SURRENDER";
-    setFont(10);
-    drawTextShadow(sub, (W-ctx.measureText(sub).width)/2, 140, 10, "rgba(255,255,255,0.88)");
-
+    // Buttons on top of the art
     drawButtons(now);
   }
 
+  // =========================
   // Intro FX
+  // =========================
   function flashShake(now){
     if (t>=FLASH0 && t<=FLASH1){
       const u=(t-FLASH0)/(FLASH1-FLASH0);
@@ -195,29 +219,31 @@
       const dx = (Math.random()*2-1)*shake;
       const dy = (Math.random()*2-1)*shake;
 
-      // strobe + whiteouts
       const strobe = 0.20 + 0.25*Math.sin(now*0.018) + 0.18*Math.sin(now*0.065);
       const bigHit = (Math.sin(now*0.010) > 0.92) ? 0.65 : 0.0;
       const flash = clamp((strobe+bigHit)*inten, 0, 1);
 
-      ctx.globalAlpha=1;
       // slight blue wash
       ctx.fillStyle=`rgba(140,180,255,${0.10*inten})`;
       ctx.fillRect(0,0,W,H);
 
+      // white flash
       ctx.globalAlpha=flash;
       ctx.fillStyle="#fff";
       ctx.fillRect(0,0,W,H);
       ctx.globalAlpha=1;
 
-      return {dx,dy,flash,inten};
+      return {dx,dy};
     }
-    return {dx:0,dy:0,flash:0,inten:0};
+    return {dx:0,dy:0};
   }
 
-  // Dialogue boxes (simple)
+  // =========================
+  // Dialogue box
+  // =========================
   function drawDialogue(text){
     const boxX=14, boxY=H-90, boxW=W-28, boxH=76;
+
     ctx.fillStyle="rgba(0,0,0,0.36)"; ctx.fillRect(boxX+2, boxY+2, boxW, boxH);
     ctx.fillStyle="rgba(6,8,14,0.88)"; ctx.fillRect(boxX, boxY, boxW, boxH);
     ctx.fillStyle="rgba(20,26,44,0.70)"; ctx.fillRect(boxX+4, boxY+4, boxW-8, boxH-8);
@@ -236,31 +262,56 @@
       else { lines.push(line); line=w; }
     }
     if (line) lines.push(line);
+
     for (let i=0;i<Math.min(3,lines.length);i++){
       drawTextShadow(lines[i], boxX+16, boxY+26+i*18, 10, "rgba(255,255,255,0.92)");
     }
   }
 
-  let titleIn=0;
+  // =========================
+  // Loading gate
+  // =========================
+  function assetsReady(){
+    // complete must be true AND dimensions must exist (catches 404s)
+    return assets.every(img => img.complete && img.naturalWidth > 0);
+  }
 
+  function drawLoading(now){
+    ctx.fillStyle="#050515"; ctx.fillRect(0,0,W,H);
+    const dots = ".".repeat(((now/300)|0)%4);
+    drawTextShadow("LOADING"+dots, 160, 150, 10, "rgba(255,255,255,0.85)");
+    drawTextShadow("If this hangs: check PNG names & paths.", 40, 190, 10, "rgba(255,255,255,0.45)");
+  }
+
+  // =========================
+  // State helpers
+  // =========================
   function reset(){
     mode="intro";
     t=0;
-    titleIn=0;
   }
 
-  // main
+  // =========================
+  // Main loop
+  // =========================
   let last=performance.now();
   function loop(now){
     const dt=Math.min(0.05,(now-last)/1000);
     last=now;
 
-    if (mode==="intro"){
+    if (mode==="loading"){
+      drawLoading(now);
+      if (assetsReady()){
+        reset();
+      }
+    }
+    else if (mode==="intro"){
       t += dt;
 
-      // base plate selection
+      // pick plate + dialog
       let plate = bed;
       let dialog = "";
+
       if (t < 3.0){
         plate = bed;
         dialog = "TOWNES HOSPITAL… AGAIN.";
@@ -304,7 +355,6 @@
     requestAnimationFrame(loop);
   }
 
-  reset();
   requestAnimationFrame(loop);
 })();
 </script>
