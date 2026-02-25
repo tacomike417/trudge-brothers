@@ -12,12 +12,11 @@
 <style>
   :root { color-scheme: dark; }
   html,body{ margin:0; height:100%; background:#050816; }
-  body{ display:flex; align-items:flex-start; justify-content:center; padding:0; }
+  body{ display:flex; justify-content:center; align-items:flex-start; }
 
-  /* IMPORTANT: JS will snap this to an integer scale on desktop for crisp pixels */
+  /* JS snaps to integer scale so desktop stays crisp */
   canvas{
     display:block;
-    margin:0 auto;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     background:#050816;
@@ -30,6 +29,12 @@
 
 <script>
 (() => {
+  // ============================================================
+  // HARD RULE for this version:
+  // Title screen = draw title_bg.png + draw menu buttons ONLY.
+  // NO extra logo text, NO rgbSplitText, NO title slam code.
+  // ============================================================
+
   const canvas = document.getElementById("c");
   const ctx = canvas.getContext("2d", { alpha:false });
   ctx.imageSmoothingEnabled = false;
@@ -37,36 +42,38 @@
   const W = canvas.width, H = canvas.height;
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const lerp=(a,b,t)=>a+(b-a)*t;
-  const easeOut=(t)=>1-Math.pow(1-t,3);
 
-  // =========================
-  // Crisp integer scaling (desktop fix)
-  // =========================
+  // ============================================================
+  // Desktop crispness: integer-scale snap
+  // ============================================================
   function snapScale(){
     const maxW = Math.min(window.innerWidth, 1080);
     const maxH = window.innerHeight;
     const sW = Math.floor(maxW / W);
     const sH = Math.floor(maxH / H);
-    const s = Math.max(1, Math.min(sW, sH));
-    canvas.style.width  = (W * s) + "px";
-    canvas.style.height = (H * s) + "px";
+    const s  = Math.max(1, Math.min(sW, sH));
+    canvas.style.width  = (W*s) + "px";
+    canvas.style.height = (H*s) + "px";
   }
   window.addEventListener("resize", snapScale);
   snapScale();
 
-  // =========================
-  // Plates (PNG)
-  // Put these files next to index.html (case-sensitive on GitHub Pages)
-  // =========================
-  const bed     = new Image(); bed.src     = "./scene_bed.png";
-  const kneel   = new Image(); kneel.src   = "./scene_kneel.png";
-  const titleBg = new Image(); titleBg.src = "./title_bg.png"; // your awesome new title art
+  // ============================================================
+  // Cache-bust version (fixes “old stuff still showing” on Pages)
+  // Bump this number any time you update images/code.
+  // ============================================================
+  const ASSET_VER = "v6";
+
+  // Plates (PNG) — must exist next to this HTML (same folder)
+  const bed     = new Image(); bed.src     = "./scene_bed.png?" + ASSET_VER;
+  const kneel   = new Image(); kneel.src   = "./scene_kneel.png?" + ASSET_VER;
+  const titleBg = new Image(); titleBg.src = "./title_bg.png?"  + ASSET_VER;
 
   const assets = [bed, kneel, titleBg];
 
-  // =========================
-  // Font helpers
-  // =========================
+  // ============================================================
+  // Font helpers (only used for menu + dialog)
+  // ============================================================
   function setFont(px){ ctx.font = `${px}px "Press Start 2P", monospace`; }
   function drawTextShadow(text, x, y, px, color="rgba(255,255,255,0.95)", shadow="rgba(0,0,0,0.80)"){
     setFont(px);
@@ -74,30 +81,29 @@
     ctx.fillStyle = color;  ctx.fillText(text, x, y);
   }
 
-  // =========================
+  // ============================================================
   // Timeline (seconds)
-  // =========================
-  const T_BED0=0.0,  T_BED1=4.8;
-  const T_KNEEL0=4.8, T_KNEEL1=7.2;
-  const FLASH0=7.2,  FLASH1=12.2;
+  // ============================================================
+  const T_KNEEL0=4.8;
+  const FLASH0=7.2, FLASH1=12.2;
   const AFTER0=12.2, AFTER1=15.6;
-  const FADE0=15.6,  FADE1=17.2;
+  const FADE0=15.6, FADE1=17.2;
 
   let mode="loading";
   let t=0;
 
-  // =========================
-  // Title menu
-  // =========================
+  // ============================================================
+  // Menu
+  // ============================================================
   const menu = {
     selected: 0,
     items: [
       { label:"START TO SURRENDER", action: ()=>{ mode="next"; } },
-      { label:"REPLAY INTRO", action: ()=>{ reset(); } },
+      { label:"REPLAY INTRO",       action: ()=>{ reset(); } },
     ]
   };
 
-  // Pointer state (for hover + touch)
+  // Pointer state (desktop hover + mobile tap)
   const pointer = {x:-999,y:-999};
 
   function setPointerFromEvent(e){
@@ -107,10 +113,8 @@
   }
 
   canvas.addEventListener("pointermove",(e)=> setPointerFromEvent(e), {passive:true});
-
   canvas.addEventListener("pointerdown",(e)=>{
     setPointerFromEvent(e);
-
     if (mode==="title"){
       const hit = hitTestButtons(pointer.x, pointer.y);
       if (hit>=0){ menu.selected=hit; menu.items[hit].action(); }
@@ -130,9 +134,6 @@
     }
   }, {passive:false});
 
-  // =========================
-  // Button layout / drawing
-  // =========================
   function buttonRects(){
     const bw=330, bh=34, cx=W/2, y1=176, gap=12;
     return [
@@ -140,7 +141,6 @@
       { x:cx-bw/2, y:y1+bh+gap, w:bw, h:bh },
     ];
   }
-
   function hitTestButtons(px,py){
     const rs=buttonRects();
     for (let i=0;i<rs.length;i++){
@@ -161,30 +161,24 @@
       const pulse = 0.5 + 0.5*Math.sin(now*0.010 + i);
       const glowA = sel ? (0.18 + 0.16*pulse) : (0.06 + 0.05*pulse);
 
-      // drop shadow
       ctx.fillStyle="rgba(0,0,0,0.45)";
       ctx.fillRect((r.x+2)|0,(r.y+2)|0,r.w|0,r.h|0);
 
-      // body
       ctx.fillStyle="rgba(10,14,26,0.82)";
       ctx.fillRect(r.x|0,r.y|0,r.w|0,r.h|0);
 
-      // inner panel
       ctx.fillStyle="rgba(22,30,52,0.55)";
       ctx.fillRect((r.x+3)|0,(r.y+3)|0,(r.w-6)|0,(r.h-6)|0);
 
-      // glow wash
       ctx.fillStyle=`rgba(140,180,255,${glowA})`;
       ctx.fillRect((r.x+1)|0,(r.y+1)|0,(r.w-2)|0,(r.h-2)|0);
 
-      // border
       ctx.strokeStyle = sel ? "rgba(255,255,255,0.62)" : "rgba(255,255,255,0.32)";
       ctx.lineWidth=1;
       ctx.strokeRect(r.x+0.5,r.y+0.5,r.w-1,r.h-1);
 
-      // label
-      setFont(10);
       const label=menu.items[i].label;
+      setFont(10);
       const lx=r.x + (r.w - ctx.measureText(label).width)/2;
       const ly=r.y + 22;
       drawTextShadow(label, lx, ly, 10, sel ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.85)");
@@ -192,22 +186,23 @@
     }
   }
 
-  // =========================
-  // Title screen
-  // IMPORTANT: We do NOT draw a text logo now because your new title_bg.png
-  // already has the huge “POW” TRUDGE BROTHERS logo baked in.
-  // =========================
+  // ============================================================
+  // Title screen render (ONLY background image + buttons)
+  // ============================================================
   function drawTitle(now){
-    if (titleBg.complete) ctx.drawImage(titleBg,0,0);
-    else { ctx.fillStyle="#050515"; ctx.fillRect(0,0,W,H); }
+    if (titleBg.complete && titleBg.naturalWidth > 0){
+      ctx.drawImage(titleBg, 0, 0, W, H);
+    } else {
+      ctx.fillStyle="#050515"; ctx.fillRect(0,0,W,H);
+      drawTextShadow("MISSING: title_bg.png", 60, 140, 10, "rgba(255,255,255,0.85)");
+    }
 
-    // Buttons on top of the art
     drawButtons(now);
   }
 
-  // =========================
-  // Intro FX
-  // =========================
+  // ============================================================
+  // Intro FX (flash/shake)
+  // ============================================================
   function flashShake(now){
     if (t>=FLASH0 && t<=FLASH1){
       const u=(t-FLASH0)/(FLASH1-FLASH0);
@@ -238,9 +233,9 @@
     return {dx:0,dy:0};
   }
 
-  // =========================
-  // Dialogue box
-  // =========================
+  // ============================================================
+  // Dialogue
+  // ============================================================
   function drawDialogue(text){
     const boxX=14, boxY=H-90, boxW=W-28, boxH=76;
 
@@ -252,14 +247,14 @@
 
     // wrap
     setFont(10);
-    const words=text.split(/\s+/);
+    const words=(text||"").split(/\s+/).filter(Boolean);
     const lines=[];
     let line="";
     const maxW=boxW-32;
     for(const w of words){
       const test=line? (line+" "+w) : w;
       if (ctx.measureText(test).width<=maxW) line=test;
-      else { lines.push(line); line=w; }
+      else { if(line) lines.push(line); line=w; }
     }
     if (line) lines.push(line);
 
@@ -268,32 +263,30 @@
     }
   }
 
-  // =========================
+  // ============================================================
   // Loading gate
-  // =========================
+  // ============================================================
   function assetsReady(){
-    // complete must be true AND dimensions must exist (catches 404s)
     return assets.every(img => img.complete && img.naturalWidth > 0);
   }
-
   function drawLoading(now){
     ctx.fillStyle="#050515"; ctx.fillRect(0,0,W,H);
     const dots = ".".repeat(((now/300)|0)%4);
-    drawTextShadow("LOADING"+dots, 160, 150, 10, "rgba(255,255,255,0.85)");
-    drawTextShadow("If this hangs: check PNG names & paths.", 40, 190, 10, "rgba(255,255,255,0.45)");
+    drawTextShadow("LOADING"+dots, 170, 150, 10, "rgba(255,255,255,0.85)");
+    drawTextShadow("If stuck: check PNG names/case/paths.", 34, 190, 10, "rgba(255,255,255,0.45)");
   }
 
-  // =========================
+  // ============================================================
   // State helpers
-  // =========================
+  // ============================================================
   function reset(){
     mode="intro";
     t=0;
   }
 
-  // =========================
+  // ============================================================
   // Main loop
-  // =========================
+  // ============================================================
   let last=performance.now();
   function loop(now){
     const dt=Math.min(0.05,(now-last)/1000);
@@ -301,9 +294,7 @@
 
     if (mode==="loading"){
       drawLoading(now);
-      if (assetsReady()){
-        reset();
-      }
+      if (assetsReady()) reset();
     }
     else if (mode==="intro"){
       t += dt;
@@ -327,8 +318,11 @@
 
       ctx.save();
       ctx.translate(fx.dx|0, fx.dy|0);
-      if (plate.complete) ctx.drawImage(plate,0,0);
-      else { ctx.fillStyle="#050816"; ctx.fillRect(0,0,W,H); }
+      if (plate.complete && plate.naturalWidth > 0){
+        ctx.drawImage(plate, 0, 0, W, H);
+      } else {
+        ctx.fillStyle="#050816"; ctx.fillRect(0,0,W,H);
+      }
       ctx.restore();
 
       if (dialog) drawDialogue(dialog);
